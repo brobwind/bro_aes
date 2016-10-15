@@ -1,7 +1,9 @@
 # bro_aes
 An AES 128-bit encryption/decryption library suitable for embed system or study
 
-'''
+Warning: This library is not compatible with the openssl, just for study.
+
+```bash
 $ ./bro_aes 
  --------------------- AES 128 ENC EXPANDED KEY -------------------------
 00000000: 2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c  +~..(.........O<
@@ -31,6 +33,6 @@ $ ./bro_aes
 000000a0: ab 76 41 92 1a b6 23 86 d2 fb 18 0d 32 3c 48 1c  .vA...#.....2<H.
  --------------------- AES 128 DEC - TEXT -------------------------------
 00000000: 77 77 77 2e 62 72 6f 62 77 69 6e 64 2e 63 6f 6d  www.brobwind.com
-'''
+```
 
 For detail info, please refer https://www.brobwind.com/archives/1236
