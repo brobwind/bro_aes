@@ -17,6 +17,7 @@
 #ifndef __BRO_AES_H__
 #define __BRO_AES_H__
 
+
 #define AES_MAXNR        10
 #define ROTL8(x,shift) ((uint8_t) ((x) << (shift)) | ((x) >> (8 - (shift))))
 
@@ -30,6 +31,16 @@
                 "roll %1,%0"        \
                 : "=r"(ret)        \
                 : "I"(n), "0"(a)    \
+                : "cc");        \
+               ret;                \
+            })
+# elif defined(__arm__)
+// ftp://ftp.dca.fee.unicamp.br/pub/docs/ea871/ARM/ARMGCCInlineAssemblerCookbook.pdf
+#   define ROTATE(a,n)   ({ register unsigned int ret;    \
+                asm (            \
+                "ror %0,%0,%1"        \
+                : "=r"(ret)        \
+                : "I"(32 - n), "0"(a)    \
                 : "cc");        \
                ret;                \
             })
