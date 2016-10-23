@@ -149,7 +149,7 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
         =============================================================
         Initial:
         -------------------------------------------
-        - Paint Text
+        - Plain Text
         s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, sa, sb, sc, sd, se, sf
         - Round Key
         r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, ra, rb, rc, rd, re, rf
@@ -201,7 +201,7 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
         ===========================================                  =====================================
         Initial:
         -------------------------------------------
-        - Paint Text:
+        - Plain Text:
         s0, s1, s2, s3, s4, s5, s6, s7,                              s3, s2, s1, s0, s7, s6, s5, s4,
         s8, s9, sa, sb, sc, sd, se, sf                               sb, sa, s9, s8, sf, se, sd, sc
         - Round Key:
