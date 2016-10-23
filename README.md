@@ -40,6 +40,7 @@ $ ./bro_aes
 ```
 
 For detail info, please refer:
-	1. https://www.brobwind.com/archives/1236
-	2. https://www.brobwind.com/archives/1255
+
+1. https://www.brobwind.com/archives/1236
+2. https://www.brobwind.com/archives/1255
 
