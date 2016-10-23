@@ -21,7 +21,13 @@
 #include "bro_aes.h"
 
 
-#define RCON(x)	(rcon(x) << 24)
+#define RCON(x)                            (rcon(x) << 24)
+
+#if STANDARD_AS_OPENSSL == 1
+#define SWAP(x)                            __builtin_bswap32(x)
+#else
+#define SWAP(x)                            (x)
+#endif
 
 
 static uint8_t rcon(uint8_t i) {
@@ -34,7 +40,7 @@ static uint8_t rcon(uint8_t i) {
 }
 
 // https://en.wikipedia.org/wiki/Finite_field_arithmetic
-/* Multiply two numbers in the GF(2^8) finite field defined 
+/* Multiply two numbers in the GF(2^8) finite field defined
  * by the polynomial x^8 + x^4 + x^3 + x + 1 = 0
  * using the Russian Peasant Multiplication algorithm
  * (the other way being to do carry-less multiplication followed by a modular reduction)
@@ -93,10 +99,10 @@ int AES_set_encrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *ke
     key->rounds = 10;
     initialize_aes_sbox(key->sbox);
 
-    v1 = key->rd_key[0] = *(uint32_t *)(userKey +  0);
-    v2 = key->rd_key[1] = *(uint32_t *)(userKey +  4);
-    v3 = key->rd_key[2] = *(uint32_t *)(userKey +  8);
-    v4 = key->rd_key[3] = *(uint32_t *)(userKey + 12);
+    v1 = key->rd_key[0] = SWAP(*(uint32_t *)(userKey +  0));
+    v2 = key->rd_key[1] = SWAP(*(uint32_t *)(userKey +  4));
+    v3 = key->rd_key[2] = SWAP(*(uint32_t *)(userKey +  8));
+    v4 = key->rd_key[3] = SWAP(*(uint32_t *)(userKey + 12));
 
     uint8_t *sbox = key->sbox;
 
@@ -125,10 +131,10 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
     uint32_t v11, v12, v13, v14;
     uint32_t v17, v18, v20;
 
-    v1 = key->rd_key[0] ^ *(uint32_t *)(text +  0);
-    v2 = key->rd_key[1] ^ *(uint32_t *)(text +  4);
-    v3 = key->rd_key[2] ^ *(uint32_t *)(text +  8);
-    v4 = key->rd_key[3] ^ *(uint32_t *)(text + 12);
+    v1 = key->rd_key[0] ^ SWAP(*(uint32_t *)(text +  0));
+    v2 = key->rd_key[1] ^ SWAP(*(uint32_t *)(text +  4));
+    v3 = key->rd_key[2] ^ SWAP(*(uint32_t *)(text +  8));
+    v4 = key->rd_key[3] ^ SWAP(*(uint32_t *)(text + 12));
 
     const uint8_t *sbox = key->sbox;
 
@@ -138,35 +144,128 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
         v13 = sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16;
         v14 = sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24;
 
-        /*****************************************************************************
-        v1  = [ a1 a2 a3 a4 ] <- 0xa1a2a3a4
-        v2  = [ b1 b2 b3 b4 ] <- 0xb1b2b3b4
-        v3  = [ c1 c2 c3 c4 ] <- 0xc1c2c3c4
-        v4  = [ d1 d2 d3 d4 ] <- 0xd1d2d3d4
+        /*******************************************************************************************
+        Standard Algorithm(As OpenSSL):
+        =============================================================
+        Initial:
+        -------------------------------------------
+        - Paint Text
+        s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, sa, sb, sc, sd, se, sf
+        - Round Key
+        r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, ra, rb, rc, rd, re, rf
 
-        v11 = [ a1 b2 c3 d4 ] <- 0xa1b2c3d4
-        v12 = [ b1 c2 d3 a4 ] <- 0xb1c2d3a4
-        v13 = [ c1 d2 a3 b4 ] <- 0xc1d2a3b4
-        v14 = [ d1 a2 b3 c4 ] <- 0xd1a2b3c4
+        Layout & Sub Bytes:
+        ----------------------------------------------
+        [ s0, s4, s8, sc ]
+        [ s1, s5, s9, sd ]
+        [ s2, s6, sa, se ]
+        [ s3, s7, sb, sf ]
 
+        Shift Rows:
+        --------------------------------------
+        [ s0, s4, s8, sc ]
+        [ s5, s9, sd, s1 ] <- (Shift 1 byte)
+        [ sa, se, s2, s6 ] <- (Shift 2 bytes)
+        [ sf, s3, s7, sb ] <- (Shift 3 bytes)
+
+        Mix Columns:
+        -------------------------------------
+        [ 02 03 01 01 ] [ s0, s4, s8, sc ]
+        [ 01 02 03 01 ]*[ s5, s9, sd, s1 ]
+        [ 01 01 02 03 ] [ sa, se, s2, s6 ]
+        [ 03 01 01 02 ] [ sf, s3, s7, sb ]
+
+        - 1. 1st column
+        [ 02*s0 ^ 03*s5 ^ 01*sa ^ 01*sf ] <- S0
+        [ 01*s0 ^ 02*s5 ^ 03*sa ^ 01*sf ] <- S5
+        [ 01*s0 ^ 01*s5 ^ 02*sa ^ 03*sf ] <- SA
+        [ 03*s0 ^ 01*s5 ^ 01*sf ^ 02*sf ] <- SF
+
+        - 2. 2, 3, 4 columns
+        ...
+
+        - 3. Finally:
+        [ S0, S4, S8, SC ]
+        [ S5, S9, SD, S1 ]
+        [ SA, SE, S2, S6 ]
+        [ SF, S3, S7, SB ]
+
+        Add Round Key:
+        --------------------------------------
+        [ S0 ^ r0, S4 ^ r4, S8 ^ r8, SC ^ rc ]
+        [ S5 ^ r1, S9 ^ r5, SD ^ r9, S1 ^ rd ]
+        [ SA ^ r2, SE ^ r6, S2 ^ ra, S6 ^ re ]
+        [ SF ^ r3, S3 ^ r7, S7 ^ rb, SB ^ rf ]
+
+        Implementation:
+        ===========================================                  =====================================
+        Initial:
+        -------------------------------------------
+        - Paint Text:
+        s0, s1, s2, s3, s4, s5, s6, s7,                              s3, s2, s1, s0, s7, s6, s5, s4,
+        s8, s9, sa, sb, sc, sd, se, sf                               sb, sa, s9, s8, sf, se, sd, sc
+        - Round Key:
+        r0, r1, r2, r3, r4, r5, r6, r7,                              r3, r2, r1, r0, r7, r6, r5, r4,
+        r8, r9, ra, rb, rc, rd, re, rf                               rb, ra, r9, r8, rf, re, rd, rc
+
+           /- v1 0xs3s2s1s0                                              /- v1 0xs0s1s2s3
+           |   /- v2 0xs7s6s5s4                                          |   /- v2 0xs4s5s6s7
+           |   |   /- v3 0xsbsas9s8                                      |   |   /- v3 0xs8s9sasb
+           |   |   |   /- v4 0xsfsesds                                   |   |   |   /- v4 0xscsdsesf
+        [ s0, s4, s8, sc ]                                            [ s3, s7, sb, sf ]
+        [ s1, s5, s9, sd ]                                            [ s2, s6, sa, se ]
+        [ s2, s6, sa, se ]                                            [ s1, s5, s9, sd ]
+        [ s3, s7, sb, sf ]                                            [ s0, s4, s8, sc ]
+
+        Sub Bytes & Shift Rows:
+        --------------------------------------                        -------------------------------------
+        [ sc, s0, s4, s8 ] <- (Shift 3 bytes)                         [ sf, s3, s7, sb ] <- (Shift 3 bytes)
+        [ s9, sd, s1, s5 ] <- (Shift 2 bytes)                         [ sa, se, s2, s6 ] <- (Shift 2 bytes)
+        [ s6, sa, se, s2 ] <- (Shift 1 byte)                          [ s5, s9, sd, s1 ] <- (Shift 1 byte)
+        [ s3, s7, sb, sf ]                                            [ s0, s4, s8, sc ]
+           |   |   |   `- v14 0xsfs2s5s8                                 |   |   |   `- v14 0xscs1s6sb
+           |   |   `- v13 0xsbses1s4                                     |   |   `- v13 0xs8sds2s7
+           |   `- v12 0xs7sasds0                                         |   `- v12 0xs4s9ses3
+           `- v11 0xs3s6s9sc                                             `- v11 0xs0s5sasf
+
+        Mix Columns:
+        -------------------------------------                         -------------------------------------
+        [ 02 03 01 01 ] [ sc, s0, s4, s8 ]                            [ 02 03 01 01 ] [ sf, s3, s7, sb ]
+        [ 01 02 03 01 ]*[ s9, sd, s1, s5 ]                            [ 01 02 03 01 ]*[ sa, se, s2, s6 ]
+        [ 01 01 02 03 ] [ s6, sa, se, s2 ]                            [ 01 01 02 03 ] [ s5, s9, sd, s1 ]
+        [ 03 01 01 02 ] [ s3, s7, sb, sf ]                            [ 03 01 01 02 ] [ s0, s4, s8, sc ]
+                           |   |   |   `- v14 0xsfs2s5s8                                 |   |   |   `- v14 0xscs1s6sb
+                           |   |   `- v13 0xsbses1s4                                     |   |   `- v13 0xs8sds2s7
+                           |   `- v12 0xs7sasds0                                         |   `- v12 0xs4s9ses3
+                           `- v11 0xs3s6s9sc                                             `- v11 0xs0s5sasf
+        - 1. 1st column
         v1 = \
-            [ 02 03 01 01 ] [ a1 ]
-            [ 01 02 03 01 ] [ b2 ]
-            [ 01 01 02 03 ] [ c3 ]
-            [ 03 01 01 02 ] [ d4 ]
-           = \
-            (02*a1 ^ 03*b2 ^ 01*c3 ^ 01*d4) << 24 |        <- (02*a1 ^ 03*b2 ^ 01*c3 ^ 01*d4) << 24
-            (01*a1 ^ 02*b2 ^ 03*c3 ^ 01*d4) << 16 |        <- (02*b2 ^ 03*c3 ^ 01*d1 ^ 01*a1) << 16
-            (01^a1 ^ 01*b2 ^ 02*c3 ^ 03*d4) <<  8 |        <- (02*c3 ^ 03*d4 ^ 01*a1 ^ 01*b2) <<  8
-            (03*a1 ^ 01*b2 ^ 01*c3 ^ 02*d4) <<  0          <- (02*d4 ^ 03*a1 ^ 01*b2 ^ 01*c3) <<  0
-        --------------------------------------------------------------------------------------------
+            (02*s3 ^ 03*s6 ^ 01*s9 ^ 01*sc) << 24 |                   (02*s0 ^ 03*s5 ^ 01*sa ^ 01*sf) << 24 |  <- (S0 << 24)
+            (01*s3 ^ 02*s6 ^ 03*s9 ^ 01*sc) << 16 |                   (01*s0 ^ 02*s5 ^ 03*sa ^ 01*sf) << 16 |  <- (S5 << 16)
+            (01*s3 ^ 01*s6 ^ 02*s9 ^ 03*sc) <<  8 |                   (01*s0 ^ 01*s5 ^ 02*sa ^ 03*sf) <<  8 |  <- (SA <<  8)
+            (03*s3 ^ 01*s6 ^ 01*s9 ^ 02*sc) <<  0                     (03*s0 ^ 01*s5 ^ 01*sf ^ 02*sf) <<  0    <- (SF <<  0)
 
-        [ 0e 0b 0d 09 ] [ 02 03 01 01 ]   [ 01 00 00 00 ]
-        [ 09 0e 0b 0d ] [ 01 02 03 01 ]   [ 00 01 00 00 ]
-                                        =
-        [ 0d 09 0e 0b ] [ 01 01 02 03 ]   [ 00 00 01 00 ]
-        [ 0b 0d 09 0e ] [ 03 01 01 02 ]   [ 00 00 00 01 ]
-        *****************************************************************************/
+        - 2. 2, 3, 4 columns
+        ...
+
+        - 3. Finally:
+        [ SC, S0, S4, S8 ]                                             [ SF, S3, S7, SB ]
+        [ S9, SD, S1, S5 ]                                             [ SA, SE, S2, S6 ]
+        [ S6, SA, SE, S2 ]                                             [ S5, S9, SD, S1 ]
+        [ S3, S7, SB, SF ]                                             [ S0, S4, S8, SC ]
+          |    |   |   `- v4 0xSFS2S5S8                                   |    |   |   `- v4 0xSCS1S6SB
+          |    |   `- v3 0xSBSES1S4                                       |    |   `- v3 0xS8SDS2S7
+          |    `- v2 0xS7SASDS0                                           |    `- v2 0xS4S9SES3
+          `- v1 0xS3S6S9SC                                                `- v1 0xS0S5SASF
+
+        Add Round Key:
+        --------------------------------------
+        [ SC ^ r0, S0 ^ r4, S4 ^ r8, S8 ^ rc ]                         [ SF ^ r3, S3 ^ r7, S7 ^ rb, SB ^ rf ]
+        [ S9 ^ r1, SD ^ r5, S1 ^ r9, S5 ^ rd ]                         [ SA ^ r2, SE ^ r6, S2 ^ ra, S6 ^ re ]
+        [ S6 ^ r2, SA ^ r6, SE ^ ra, S2 ^ re ]                         [ S5 ^ r1, S9 ^ r5, SD ^ r9, S1 ^ rd ]
+        [ S3 ^ r3, S7 ^ r7, SB ^ rb, SF ^ rf ]                         [ S0 ^ r0, S4 ^ r4, S8 ^ r8, SC ^ rc ]
+        *******************************************************************************************/
+
         v17 = ROTATE(v11, 16);
         v18 = ROTATE(v11, 24);
         v1 = key->rd_key[4 * v20 + 0] ^ 0x1B * ((v11 >> 7) & 0x1010101) ^ 2 * (v11 & 0xFF7F7F7F) ^
@@ -189,17 +288,17 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
     }
 
     // v1 v2, v3, v4
-    *(uint32_t *)(cipher +  0) = key->rd_key[4 * v20 + 0] ^
-            (sbox[(v1 >> 24) & 0xFF] << 24 | sbox[(v2 >> 16) & 0xFF] << 16 | sbox[(v3 >>  8) & 0xFF] <<  8 | sbox[(v4 >>  0) & 0xFF] <<  0);
+    *(uint32_t *)(cipher +  0) = SWAP(key->rd_key[4 * v20 + 0] ^
+            (sbox[(v1 >> 24) & 0xFF] << 24 | sbox[(v2 >> 16) & 0xFF] << 16 | sbox[(v3 >>  8) & 0xFF] <<  8 | sbox[(v4 >>  0) & 0xFF] <<  0));
 
-    *(uint32_t *)(cipher +  4) = key->rd_key[4 * v20 + 1] ^
-            (sbox[(v1 >>  0) & 0xFF] <<  0 | sbox[(v2 >> 24) & 0xFF] << 24 | sbox[(v3 >> 16) & 0xFF] << 16 | sbox[(v4 >>  8) & 0xFF] <<  8);
+    *(uint32_t *)(cipher +  4) = SWAP(key->rd_key[4 * v20 + 1] ^
+            (sbox[(v1 >>  0) & 0xFF] <<  0 | sbox[(v2 >> 24) & 0xFF] << 24 | sbox[(v3 >> 16) & 0xFF] << 16 | sbox[(v4 >>  8) & 0xFF] <<  8));
 
-    *(uint32_t *)(cipher +  8) = key->rd_key[4 * v20 + 2] ^
-            (sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16);
+    *(uint32_t *)(cipher +  8) = SWAP(key->rd_key[4 * v20 + 2] ^
+            (sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16));
 
-    *(uint32_t *)(cipher + 12) = key->rd_key[4 * v20 + 3] ^
-            (sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24);
+    *(uint32_t *)(cipher + 12) = SWAP(key->rd_key[4 * v20 + 3] ^
+            (sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24));
 }
 
 int AES_set_decrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *key)
@@ -211,10 +310,10 @@ int AES_set_decrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *ke
     key->rounds = 10;
     initialize_aes_sbox(key->sbox);
 
-    v1 = key->rd_key[0] = *(uint32_t *)(userKey +  0);
-    v2 = key->rd_key[1] = *(uint32_t *)(userKey +  4);
-    v3 = key->rd_key[2] = *(uint32_t *)(userKey +  8);
-    v4 = key->rd_key[3] = *(uint32_t *)(userKey + 12);
+    v1 = key->rd_key[0] = SWAP(*(uint32_t *)(userKey +  0));
+    v2 = key->rd_key[1] = SWAP(*(uint32_t *)(userKey +  4));
+    v3 = key->rd_key[2] = SWAP(*(uint32_t *)(userKey +  8));
+    v4 = key->rd_key[3] = SWAP(*(uint32_t *)(userKey + 12));
 
     uint8_t *sbox = key->sbox;
 
@@ -245,10 +344,10 @@ void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
     const uint8_t *inv_sbox = key->sbox;
     uint32_t v20 = key->rounds;
 
-    v11 = *(uint32_t *)(cipher +  0) ^ key->rd_key[v20 * 4 + 0];
-    v12 = *(uint32_t *)(cipher +  4) ^ key->rd_key[v20 * 4 + 1];
-    v13 = *(uint32_t *)(cipher +  8) ^ key->rd_key[v20 * 4 + 2];
-    v14 = *(uint32_t *)(cipher + 12) ^ key->rd_key[v20 * 4 + 3];
+    v11 = SWAP(*(uint32_t *)(cipher +  0)) ^ key->rd_key[v20 * 4 + 0];
+    v12 = SWAP(*(uint32_t *)(cipher +  4)) ^ key->rd_key[v20 * 4 + 1];
+    v13 = SWAP(*(uint32_t *)(cipher +  8)) ^ key->rd_key[v20 * 4 + 2];
+    v14 = SWAP(*(uint32_t *)(cipher + 12)) ^ key->rd_key[v20 * 4 + 3];
 
     v1 = inv_sbox[(v11 >> 24) & 0xff] << 24 |
          inv_sbox[(v14 >> 16) & 0xff] << 16 |
@@ -301,7 +400,7 @@ void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
                      (gmul(a1, 0x0d) ^ gmul(a2, 0x09) ^ gmul(a3, 0x0e) ^ gmul(a4, 0x0b)) <<  8 |
                      (gmul(a1, 0x0b) ^ gmul(a2, 0x0d) ^ gmul(a3, 0x09) ^ gmul(a4, 0x0e)) <<  0;
         }
-        
+
         v11 = inv_sbox[(v1 >> 24) & 0xff] << 24 |
              inv_sbox[(v4 >> 16) & 0xff] << 16 |
              inv_sbox[(v3 >>  8) & 0xff] <<  8 |
@@ -325,8 +424,8 @@ void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
         v1 = v11; v2 = v12; v3 = v13; v4 = v14;
     }
 
-    *(uint32_t *)(text +  0) = key->rd_key[0] ^ v1;
-    *(uint32_t *)(text +  4) = key->rd_key[1] ^ v2;
-    *(uint32_t *)(text +  8) = key->rd_key[2] ^ v3;
-    *(uint32_t *)(text + 12) = key->rd_key[3] ^ v4;
+    *(uint32_t *)(text +  0) = SWAP(key->rd_key[0] ^ v1);
+    *(uint32_t *)(text +  4) = SWAP(key->rd_key[1] ^ v2);
+    *(uint32_t *)(text +  8) = SWAP(key->rd_key[2] ^ v3);
+    *(uint32_t *)(text + 12) = SWAP(key->rd_key[3] ^ v4);
 }

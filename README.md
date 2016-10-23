@@ -1,7 +1,11 @@
 # bro_aes
 An AES 128-bit encryption/decryption library suitable for embed system or study
 
-Warning: This library is not compatible with the openssl, just for study.
+1. Implement standard AES 128-bit algorithm, then can produce the same result as openssl
+2. Add more comments to explain the algorithm.
+
+Add a macro to support this function:
+	$ STANDARD_AS_OPENSSL=1 make
 
 ```bash
 $ ./bro_aes 
@@ -35,4 +39,7 @@ $ ./bro_aes
 00000000: 77 77 77 2e 62 72 6f 62 77 69 6e 64 2e 63 6f 6d  www.brobwind.com
 ```
 
-For detail info, please refer https://www.brobwind.com/archives/1236
+For detail info, please refer:
+	1. https://www.brobwind.com/archives/1236
+	2. https://www.brobwind.com/archives/1255
+

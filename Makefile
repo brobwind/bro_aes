@@ -16,6 +16,10 @@
 
 all: bro_aes
 
+STANDARD_AS_OPENSSL ?= 0
+
+CFLAGS := -DSTANDARD_AS_OPENSSL=$(strip $(STANDARD_AS_OPENSSL))
+
 OBJS := main.o bro_aes.o bro_util.o
 
 bro_aes: $(OBJS)
