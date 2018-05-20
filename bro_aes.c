@@ -154,16 +154,16 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
 
         Mix Columns:
         -------------------------------------
-        [ 02 03 01 01 ] [ s0, s4, s8, sc ]
-        [ 01 02 03 01 ]*[ s5, s9, sd, s1 ]
-        [ 01 01 02 03 ] [ sa, se, s2, s6 ]
-        [ 03 01 01 02 ] [ sf, s3, s7, sb ]
+        [ 2 3 1 1 ] [ s0, s4, s8, sc ]
+        [ 1 2 3 1 ]*[ s5, s9, sd, s1 ]
+        [ 1 1 2 3 ] [ sa, se, s2, s6 ]
+        [ 3 1 1 2 ] [ sf, s3, s7, sb ]
 
         - 1. 1st column
-        [ 02*s0 ^ 03*s5 ^ 01*sa ^ 01*sf ] <- S0
-        [ 01*s0 ^ 02*s5 ^ 03*sa ^ 01*sf ] <- S5
-        [ 01*s0 ^ 01*s5 ^ 02*sa ^ 03*sf ] <- SA
-        [ 03*s0 ^ 01*s5 ^ 01*sf ^ 02*sf ] <- SF
+        [ 2*s0 ^ 3*s5 ^ 1*sa ^ 1*sf ] <- S0
+        [ 1*s0 ^ 2*s5 ^ 3*sa ^ 1*sf ] <- S5
+        [ 1*s0 ^ 1*s5 ^ 2*sa ^ 3*sf ] <- SA
+        [ 3*s0 ^ 1*s5 ^ 1*sf ^ 2*sf ] <- SF
 
         - 2. 2, 3, 4 columns
         ...
@@ -214,20 +214,20 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
 
         Mix Columns:
         -------------------------------------                         -------------------------------------
-        [ 02 03 01 01 ] [ sc, s0, s4, s8 ]                            [ 02 03 01 01 ] [ sf, s3, s7, sb ]
-        [ 01 02 03 01 ]*[ s9, sd, s1, s5 ]                            [ 01 02 03 01 ]*[ sa, se, s2, s6 ]
-        [ 01 01 02 03 ] [ s6, sa, se, s2 ]                            [ 01 01 02 03 ] [ s5, s9, sd, s1 ]
-        [ 03 01 01 02 ] [ s3, s7, sb, sf ]                            [ 03 01 01 02 ] [ s0, s4, s8, sc ]
+        [ 2 3 1 1 ] [ sc, s0, s4, s8 ]                            [ 2 3 1 1 ] [ sf, s3, s7, sb ]
+        [ 1 2 3 1 ]*[ s9, sd, s1, s5 ]                            [ 1 2 3 1 ]*[ sa, se, s2, s6 ]
+        [ 1 1 2 3 ] [ s6, sa, se, s2 ]                            [ 1 1 2 3 ] [ s5, s9, sd, s1 ]
+        [ 3 1 1 2 ] [ s3, s7, sb, sf ]                            [ 3 1 1 2 ] [ s0, s4, s8, sc ]
                            |   |   |   `- v14 0xsfs2s5s8                                 |   |   |   `- v14 0xscs1s6sb
                            |   |   `- v13 0xsbses1s4                                     |   |   `- v13 0xs8sds2s7
                            |   `- v12 0xs7sasds0                                         |   `- v12 0xs4s9ses3
                            `- v11 0xs3s6s9sc                                             `- v11 0xs0s5sasf
         - 1. 1st column
         v1 = \
-            (02*s3 ^ 03*s6 ^ 01*s9 ^ 01*sc) << 24 |                   (02*s0 ^ 03*s5 ^ 01*sa ^ 01*sf) << 24 |  <- (S0 << 24)
-            (01*s3 ^ 02*s6 ^ 03*s9 ^ 01*sc) << 16 |                   (01*s0 ^ 02*s5 ^ 03*sa ^ 01*sf) << 16 |  <- (S5 << 16)
-            (01*s3 ^ 01*s6 ^ 02*s9 ^ 03*sc) <<  8 |                   (01*s0 ^ 01*s5 ^ 02*sa ^ 03*sf) <<  8 |  <- (SA <<  8)
-            (03*s3 ^ 01*s6 ^ 01*s9 ^ 02*sc) <<  0                     (03*s0 ^ 01*s5 ^ 01*sf ^ 02*sf) <<  0    <- (SF <<  0)
+            (2*s3 ^ 3*s6 ^ 1*s9 ^ 1*sc) << 24 |                   (2*s0 ^ 3*s5 ^ 1*sa ^ 1*sf) << 24 |  <- (S0 << 24)
+            (1*s3 ^ 2*s6 ^ 3*s9 ^ 1*sc) << 16 |                   (1*s0 ^ 2*s5 ^ 3*sa ^ 1*sf) << 16 |  <- (S5 << 16)
+            (1*s3 ^ 1*s6 ^ 2*s9 ^ 3*sc) <<  8 |                   (1*s0 ^ 1*s5 ^ 2*sa ^ 3*sf) <<  8 |  <- (SA <<  8)
+            (3*s3 ^ 1*s6 ^ 1*s9 ^ 2*sc) <<  0                     (3*s0 ^ 1*s5 ^ 1*sf ^ 2*sf) <<  0    <- (SF <<  0)
 
         - 2. 2, 3, 4 columns
         ...
@@ -284,9 +284,9 @@ static uint32_t AES_decrypt_one_row_opt(uint32_t v1)
 {
     uint32_t v2, v3, v4, v5, v6, v7, v8;
 
-    v2 = 2 * (v1 & 0xFF7F7F7F) ^ 27 * ((v1 >> 7) & 0x1010101);
-    v3 = 2 * (v2 & 0xFF7F7F7F) ^ 27 * ((v2 >> 7) & 0x1010101);
-    v4 = 2 * (v3 & 0xFF7F7F7F) ^ 27 * ((v3 >> 7) & 0x1010101);
+    v2 = ((v1 & 0xFF7F7F7F) * 2) ^ (((v1 >> 7) & 0x1010101) * 27);
+    v3 = ((v2 & 0xFF7F7F7F) * 2) ^ (((v2 >> 7) & 0x1010101) * 27);
+    v4 = ((v3 & 0xFF7F7F7F) * 2) ^ (((v3 >> 7) & 0x1010101) * 27);
     v5 = v1 ^ v4;
     v6 = ROTATE(v5 ^ v2, 8);
     v7 = ROTATE(v5 ^ v3, 16);
@@ -298,7 +298,7 @@ static uint32_t AES_decrypt_one_row_opt(uint32_t v1)
 void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
 {
     uint32_t v1, v2, v3, v4, v11, v12, v13, v14;
-    uint32_t v20 = key->rounds;
+    int32_t v20 = key->rounds;
     const uint8_t *inv_sbox = key->sbox;
 
     v1 = SWAP(*(uint32_t *)(cipher +  0)) ^ key->rd_key[v20 * 4 + 0];
@@ -306,7 +306,7 @@ void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
     v3 = SWAP(*(uint32_t *)(cipher +  8)) ^ key->rd_key[v20 * 4 + 2];
     v4 = SWAP(*(uint32_t *)(cipher + 12)) ^ key->rd_key[v20 * 4 + 3];
 
-    for (v20--; v20 >= 1; v20--) {
+    for (v20--; v20 >= 0; v20--) {
         v11 = key->rd_key[v20 * 4 + 0] ^ (
              inv_sbox[(v1 >> 24) & 0xff] << 24 |
              inv_sbox[(v4 >> 16) & 0xff] << 16 |
@@ -334,36 +334,26 @@ void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
         /************************************************************************
         v1 = 0xa1a2a3a4
         v11 = \
-                [ 0e 0b 0d 09 ]   [ a1 ]
-                [ 09 0e 0b 0d ]   [ a2 ]
-                [ 0d 09 0e 0b ]   [ a3 ]
-                [ 0b 0d 09 0e ]   [ a4 ]
+                [ 0x0e 0x0b 0x0d 0x09 ]   [ a1 ]
+                [ 0x09 0x0e 0x0b 0x0d ]   [ a2 ]
+                [ 0x0d 0x09 0x0e 0x0b ]   [ a3 ]
+                [ 0x0b 0x0d 0x09 0x0e ]   [ a4 ]
             = \
-                (0e*a1 ^ 0b*a2 ^ 0d*a3 ^ 09*a4) << 24 |
-                (09*a1 ^ 0e*a2 ^ 0b*a3 ^ 0d*a4) << 16 |
-                (0d*a1 ^ 09*a2 ^ 0e*a3 ^ 0b*a4) <<  8 |
-                (0b*a1 ^ 0d*a2 ^ 09*a3 ^ 0e*a4) <<  0
+                (0x0e*a1 ^ 0x0b*a2 ^ 0x0d*a3 ^ 0x09*a4) << 24 |
+                (0x09*a1 ^ 0x0e*a2 ^ 0x0b*a3 ^ 0x0d*a4) << 16 |
+                (0x0d*a1 ^ 0x09*a2 ^ 0x0e*a3 ^ 0x0b*a4) <<  8 |
+                (0x0b*a1 ^ 0x0d*a2 ^ 0x09*a3 ^ 0x0e*a4) <<  0
         *************************************************************************/
-        v1 = AES_decrypt_one_row_opt(v11);
-        v2 = AES_decrypt_one_row_opt(v12);
-        v3 = AES_decrypt_one_row_opt(v13);
-        v4 = AES_decrypt_one_row_opt(v14);
+        if (v20 > 0) {
+            v1 = AES_decrypt_one_row_opt(v11);
+            v2 = AES_decrypt_one_row_opt(v12);
+            v3 = AES_decrypt_one_row_opt(v13);
+            v4 = AES_decrypt_one_row_opt(v14);
+        }
     }
 
-    v11 = inv_sbox[(v1 >> 24) & 0xff] << 24 | inv_sbox[(v4 >> 16) & 0xff] << 16 |
-         inv_sbox[(v3 >>  8) & 0xff] <<  8 | inv_sbox[(v2 >>  0) & 0xff] <<  0;
-
-    v12 = inv_sbox[(v2 >> 24) & 0xff] << 24 | inv_sbox[(v1 >> 16) & 0xff] << 16 |
-         inv_sbox[(v4 >>  8) & 0xff] <<  8 | inv_sbox[(v3 >>  0) & 0xff] <<  0;
-
-    v13 = inv_sbox[(v3 >> 24) & 0xff] << 24 | inv_sbox[(v2 >> 16) & 0xff] << 16 |
-         inv_sbox[(v1 >>  8) & 0xff] <<  8 | inv_sbox[(v4 >>  0) & 0xff] <<  0;
-
-    v14 = inv_sbox[(v4 >> 24) & 0xff] << 24 | inv_sbox[(v3 >> 16) & 0xff] << 16 |
-         inv_sbox[(v2 >>  8) & 0xff] <<  8 | inv_sbox[(v1 >>  0) & 0xff] <<  0;
-
-    *(uint32_t *)(text +  0) = SWAP(key->rd_key[0] ^ v11);
-    *(uint32_t *)(text +  4) = SWAP(key->rd_key[1] ^ v12);
-    *(uint32_t *)(text +  8) = SWAP(key->rd_key[2] ^ v13);
-    *(uint32_t *)(text + 12) = SWAP(key->rd_key[3] ^ v14);
+    *(uint32_t *)(text +  0) = SWAP(v11);
+    *(uint32_t *)(text +  4) = SWAP(v12);
+    *(uint32_t *)(text +  8) = SWAP(v13);
+    *(uint32_t *)(text + 12) = SWAP(v14);
 }
