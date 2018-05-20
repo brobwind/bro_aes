@@ -102,31 +102,47 @@ int AES_set_encrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *ke
 
 static uint32_t AES_encrypt_one_row_opt(uint32_t v1)
 {
-    uint32_t v2, v3;
+    uint32_t v2, v3, v4, v5, v6;
 
     v2 = ROTATE(v1, 16);
     v3 = ROTATE(v1, 24);
-    v1 = 0x1B * ((v1 >> 7) & 0x1010101) ^ 2 * (v1 & 0xFF7F7F7F) ^
-                ((2 * (v1 & 0x7F000000) ^ 0x1B * ((v1 >> 7) & 0x1010101) ^ v1) >> 24 | (0x1B * ((v1 >> 7) & 0x10101) ^ 2 * (v1 & 0xFFFF7F7F) ^ v1) << 8) ^ v3 ^ v2;
-    return v1;
+    v4 = ((v1 & 0xFF7F7F7F) * 2) ^ (((v1 >> 7) & 0x01010101) * 0x1B);
+    v5 = ((v1 & 0x7F000000) * 2) ^ (((v1 >> 7) & 0x01010101) * 0x1B);
+    v6 = ((v1 & 0xFFFF7F7F) * 2) ^ (((v1 >> 7) & 0x00010101) * 0x1B);
+
+    return v2 ^ v3 ^ v4 ^ ((v5 ^ v1) >> 24 | (v6 ^ v1) << 8);
 }
 
 void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
 {
-    uint32_t v20, v1, v2, v3, v4;
-    uint32_t v11, v12, v13, v14;
+    int32_t v20;
+    uint32_t v1, v2, v3, v4, v11, v12, v13, v14;
     const uint8_t *sbox = key->sbox;
 
-    v1 = key->rd_key[0] ^ SWAP(*(uint32_t *)(text +  0));
-    v2 = key->rd_key[1] ^ SWAP(*(uint32_t *)(text +  4));
-    v3 = key->rd_key[2] ^ SWAP(*(uint32_t *)(text +  8));
-    v4 = key->rd_key[3] ^ SWAP(*(uint32_t *)(text + 12));
+    v11 = SWAP(*(uint32_t *)(text +  0));
+    v12 = SWAP(*(uint32_t *)(text +  4));
+    v13 = SWAP(*(uint32_t *)(text +  8));
+    v14 = SWAP(*(uint32_t *)(text + 12));
 
-    for (v20 = 1; v20 < (uint32_t)key->rounds; v20++) {
-        v11 = sbox[(v1 >> 24) & 0xFF] << 24 | sbox[(v2 >> 16) & 0xFF] << 16 | sbox[(v3 >>  8) & 0xFF] <<  8 | sbox[(v4 >>  0) & 0xFF] <<  0;
-        v12 = sbox[(v1 >>  0) & 0xFF] <<  0 | sbox[(v2 >> 24) & 0xFF] << 24 | sbox[(v3 >> 16) & 0xFF] << 16 | sbox[(v4 >>  8) & 0xFF] <<  8;
-        v13 = sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16;
-        v14 = sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24;
+    for (v20 = 0; v20 <= key->rounds; v20++) {
+        v1 = key->rd_key[4 * v20 + 0] ^ v11;
+        v2 = key->rd_key[4 * v20 + 1] ^ v12;
+        v3 = key->rd_key[4 * v20 + 2] ^ v13;
+        v4 = key->rd_key[4 * v20 + 3] ^ v14;
+
+        if (v20 < key->rounds) {
+            v11 = sbox[(v1 >> 24) & 0xFF] << 24 | sbox[(v2 >> 16) & 0xFF] << 16 | sbox[(v3 >>  8) & 0xFF] <<  8 | sbox[(v4 >>  0) & 0xFF] <<  0;
+            v12 = sbox[(v1 >>  0) & 0xFF] <<  0 | sbox[(v2 >> 24) & 0xFF] << 24 | sbox[(v3 >> 16) & 0xFF] << 16 | sbox[(v4 >>  8) & 0xFF] <<  8;
+            v13 = sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16;
+            v14 = sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24;
+        }
+
+        if (v20 < key->rounds - 1) {
+            v11 = AES_encrypt_one_row_opt(v11);
+            v12 = AES_encrypt_one_row_opt(v12);
+            v13 = AES_encrypt_one_row_opt(v13);
+            v14 = AES_encrypt_one_row_opt(v14);
+        }
 
         /*******************************************************************************************
         Standard Algorithm(As OpenSSL):
@@ -249,25 +265,13 @@ void AES_encrypt(const uint8_t *text, uint8_t *cipher, const AES_KEY *key)
         [ S6 ^ r2, SA ^ r6, SE ^ ra, S2 ^ re ]                         [ S5 ^ r1, S9 ^ r5, SD ^ r9, S1 ^ rd ]
         [ S3 ^ r3, S7 ^ r7, SB ^ rb, SF ^ rf ]                         [ S0 ^ r0, S4 ^ r4, S8 ^ r8, SC ^ rc ]
         *******************************************************************************************/
-
-        v1 = key->rd_key[4 * v20 + 0] ^ AES_encrypt_one_row_opt(v11);
-        v2 = key->rd_key[4 * v20 + 1] ^ AES_encrypt_one_row_opt(v12);
-        v3 = key->rd_key[4 * v20 + 2] ^ AES_encrypt_one_row_opt(v13);
-        v4 = key->rd_key[4 * v20 + 3] ^ AES_encrypt_one_row_opt(v14);
     }
 
     // v1 v2, v3, v4
-    *(uint32_t *)(cipher +  0) = SWAP(key->rd_key[4 * v20 + 0] ^
-            (sbox[(v1 >> 24) & 0xFF] << 24 | sbox[(v2 >> 16) & 0xFF] << 16 | sbox[(v3 >>  8) & 0xFF] <<  8 | sbox[(v4 >>  0) & 0xFF] <<  0));
-
-    *(uint32_t *)(cipher +  4) = SWAP(key->rd_key[4 * v20 + 1] ^
-            (sbox[(v1 >>  0) & 0xFF] <<  0 | sbox[(v2 >> 24) & 0xFF] << 24 | sbox[(v3 >> 16) & 0xFF] << 16 | sbox[(v4 >>  8) & 0xFF] <<  8));
-
-    *(uint32_t *)(cipher +  8) = SWAP(key->rd_key[4 * v20 + 2] ^
-            (sbox[(v1 >>  8) & 0xFF] <<  8 | sbox[(v2 >>  0) & 0xFF] <<  0 | sbox[(v3 >> 24) & 0xFF] << 24 | sbox[(v4 >> 16) & 0xFF] << 16));
-
-    *(uint32_t *)(cipher + 12) = SWAP(key->rd_key[4 * v20 + 3] ^
-            (sbox[(v1 >> 16) & 0xFF] << 16 | sbox[(v2 >>  8) & 0xFF] <<  8 | sbox[(v3 >>  0) & 0xFF] <<  0 | sbox[(v4 >> 24) & 0xFF] << 24));
+    *(uint32_t *)(cipher +  0) = SWAP(v1);
+    *(uint32_t *)(cipher +  4) = SWAP(v2);
+    *(uint32_t *)(cipher +  8) = SWAP(v3);
+    *(uint32_t *)(cipher + 12) = SWAP(v4);
 }
 
 int AES_set_decrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *key)
@@ -282,17 +286,17 @@ int AES_set_decrypt_key(const uint8_t *userKey, const uint32_t bits, AES_KEY *ke
 
 static uint32_t AES_decrypt_one_row_opt(uint32_t v1)
 {
-    uint32_t v2, v3, v4, v5, v6, v7, v8;
+    uint32_t v2, v3, v4, v5, v6, v7;
 
-    v2 = ((v1 & 0xFF7F7F7F) * 2) ^ (((v1 >> 7) & 0x1010101) * 27);
-    v3 = ((v2 & 0xFF7F7F7F) * 2) ^ (((v2 >> 7) & 0x1010101) * 27);
-    v4 = ((v3 & 0xFF7F7F7F) * 2) ^ (((v3 >> 7) & 0x1010101) * 27);
-    v5 = v1 ^ v4;
-    v6 = ROTATE(v5 ^ v2, 8);
-    v7 = ROTATE(v5 ^ v3, 16);
-    v8 = ROTATE(v5, 24);
+    v2 = ((v1 & 0xFF7F7F7F) * 2) ^ (((v1 >> 7) & 0x01010101) * 0x1B);
+    v3 = ((v2 & 0xFF7F7F7F) * 2) ^ (((v2 >> 7) & 0x01010101) * 0x1B);
+    v4 = ((v3 & 0xFF7F7F7F) * 2) ^ (((v3 >> 7) & 0x01010101) * 0x1B);
 
-    return v2 ^ v3 ^ v4 ^ v6 ^ v7 ^ v8;
+    v5 = ROTATE(v1 ^ v2 ^ v4, 8);
+    v6 = ROTATE(v1 ^ v3 ^ v4, 16);
+    v7 = ROTATE(v1 ^ v4, 24);
+
+    return v2 ^ v3 ^ v4 ^ v5 ^ v6 ^ v7;
 }
 
 void AES_decrypt(const uint8_t *cipher, uint8_t *text, const AES_KEY *key)
